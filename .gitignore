@@ -1,0 +1,6 @@
+profile/
+logs/
+.venv/
+__pycache__/
+*.local.user.js
+tests/out/
