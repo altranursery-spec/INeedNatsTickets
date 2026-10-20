@@ -4,3 +4,6 @@ logs/
 __pycache__/
 *.local.user.js
 tests/out/
+*.rar
+*.zip
+*.7z
