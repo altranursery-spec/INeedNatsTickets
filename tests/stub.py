@@ -21,6 +21,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # Injected into every served page: a stand-in for Humanitix's own JavaScript (which cannot run
 # offline) plus a click recorder. This is "the site", not the script under test.
 SITE_JS = r"""
+<style>dialog.Drawer{display:block;position:static}[data-testid="checkout-btn"],[data-testid^="increment-"]{display:inline-block;min-width:120px;min-height:40px}</style>
 <script>
 (function () {
   function describe(el) {
@@ -42,15 +43,19 @@ SITE_JS = r"""
         var box = b.parentElement, inp = box.querySelector("input"), pv = box.querySelector('[data-testid="picker-value"]');
         var max = Number(inp.getAttribute("max") || 1), v = Number(inp.value || 0);
         v = b.getAttribute("data-testid").indexOf("increment") === 0 ? Math.min(max, v + 1) : Math.max(0, v - 1);
-        inp.value = String(v); if (pv) pv.textContent = String(v);
-        document.querySelectorAll('[data-testid="checkout-btn"]').forEach(function (c) { c.setAttribute("aria-disabled", v > 0 ? "false" : "true"); });
+        var apply = function () {
+          inp.value = String(v); if (pv) pv.textContent = String(v);
+          document.querySelectorAll('[data-testid="checkout-btn"]').forEach(function (c) { c.setAttribute("aria-disabled", v > 0 ? "false" : "true"); });
+        };
+        if (window.__slowIncrementMs) setTimeout(apply, window.__slowIncrementMs); else apply();
       });
     });
     document.querySelectorAll('[data-testid="checkout-btn"]').forEach(function (c) {
       c.addEventListener("click", function (e) {
         e.preventDefault();
         var qty = 0; document.querySelectorAll('input[data-testid^="value-"]').forEach(function (i) { qty += Number(i.value || 0); });
-        if (qty < 1) return;
+        if (qty < 1 && !window.__continueIgnoresQty) return;
+        if (qty < 1) qty = 1;
         var base = location.pathname.replace(/\/tickets\/?$/, "");
         setTimeout(function () { location.href = base + "/au/test0000000000000000001/details?qty=" + qty; }, 60);
       });
@@ -142,6 +147,13 @@ def checkout_page(challenge_origin: str) -> str:
 {SITE_JS}</body></html>'''
 
 
+HOLD_PAGE = '''<!doctype html><html><head><meta charset="utf-8"><title>Just a moment...</title><meta http-equiv="refresh" content="2"></head>
+<body><div id="cf-wrapper"><h1>Just a moment...</h1><p>Checking your browser before accessing events.humanitix.com.</p>
+<p>This process is automatic. Your browser will redirect to your requested content shortly.</p></div></body></html>'''
+
+DONE_PAGE = '''<!doctype html><html><head><meta charset="utf-8"><title>Order complete</title></head><body>
+<h1>Payment complete!</h1><p>Your tickets have been emailed to you.</p>''' + SITE_JS + '''</body></html>'''
+
 CHALLENGE_PAGE = '''<!doctype html><html><head><meta charset="utf-8"><title>challenge</title></head><body>
 <p>Verify you are human</p><input id="cf-input" name="cf-turnstile-response" placeholder="token"/>
 <button type="button" id="verify">Verify</button>
@@ -153,10 +165,16 @@ document.addEventListener("click", function (e) { try { navigator.sendBeacon("/_
 class Plan:
     """What the site serves at a given moment. All times are epoch seconds."""
     def __init__(self, before="finals", after="digimon", flip_at=None, doc_error_from=None, doc_error_to=None,
-                 sale_str=None, qty_max=None):
+                 sale_str=None, qty_max=None, hold_from=None, hold_to=None, fetch_429_from=None, fetch_429_to=None,
+                 expire_after_ms=None, slow_increment_ms=None, continue_ignores_qty=False):
         self.before, self.after, self.flip_at = before, after, flip_at
         self.doc_error_from, self.doc_error_to = doc_error_from, doc_error_to
         self.sale_str, self.qty_max = sale_str, qty_max
+        self.hold_from, self.hold_to = hold_from, hold_to                 # document loads get a Cloudflare-style "Just a moment" page
+        self.fetch_429_from, self.fetch_429_to = fetch_429_from, fetch_429_to   # background polls get HTTP 429
+        self.expire_after_ms = expire_after_ms                           # checkout page shows the expired-hold message after this
+        self.slow_increment_ms = slow_increment_ms                       # "+" takes this long to update the value (slow page JS)
+        self.continue_ignores_qty = continue_ignores_qty                 # Continue navigates even with qty 0 (human-click scenario)
 
 
 class Recorder:
@@ -227,7 +245,13 @@ def _make_handler(rec: Recorder, plan: Plan, challenge_origin: str, is_challenge
                 rec.add_request(self.path, kind, 404); self.send_response(404); self.end_headers(); return
 
             now = time.time()
+            if "/complete" in path:
+                rec.add_request(self.path, kind, 200); self._send(200, DONE_PAGE.encode("utf-8")); return
             if re.search(r"/tickets/?$", path):
+                if kind == "document" and plan.hold_from and plan.hold_from <= now < (plan.hold_to or 1e18):
+                    rec.add_request(self.path, kind, 503); self._send(503, HOLD_PAGE.encode("utf-8")); return
+                if kind == "fetch" and plan.fetch_429_from and plan.fetch_429_from <= now < (plan.fetch_429_to or 1e18):
+                    rec.add_request(self.path, kind, 429); self._send(429, b"<html><title>429</title><body>Too many requests</body></html>"); return
                 if kind == "document" and plan.doc_error_from and plan.doc_error_from <= now < (plan.doc_error_to or 1e18):
                     rec.add_request(self.path, kind, 502)
                     self._send(502, b"<html><head><title>502 Bad gateway</title></head><body>Here's an event we didn't plan for... Bad gateway. "
@@ -240,10 +264,14 @@ def _make_handler(rec: Recorder, plan: Plan, challenge_origin: str, is_challenge
                 if plan.qty_max and key == "digimon":
                     html = html.replace('max="1"', f'max="{plan.qty_max}"')
                 html = html.replace("https://images.humanitix.com", "/images-stub")   # keep the audit fully offline
-                html = html.replace("</body>", SITE_JS + "</body>")
+                flags = "<script>window.__slowIncrementMs=%s;window.__continueIgnoresQty=%s;</script>" % (plan.slow_increment_ms or 0, "true" if plan.continue_ignores_qty else "false")
+                html = html.replace("</body>", flags + SITE_JS + "</body>")
                 rec.add_request(self.path, kind, 200); self._send(200, html.encode("utf-8")); return
             if "/details" in path:
-                rec.add_request(self.path, kind, 200); self._send(200, checkout_page(challenge_origin).encode("utf-8")); return
+                page = checkout_page(challenge_origin)
+                if plan.expire_after_ms:
+                    page = page.replace("</body>", '<script>setTimeout(function(){var d=document.createElement("div");d.id="expired";d.textContent="Session timed out. Your checkout time has expired.";document.body.prepend(d);}, %d);</script></body>' % plan.expire_after_ms)
+                rec.add_request(self.path, kind, 200); self._send(200, page.encode("utf-8")); return
             if path == "/robots.txt":
                 rec.add_request(self.path, kind, 200); self._send(200, b"User-agent: *\n", "text/plain"); return
             rec.add_request(self.path, kind, 404)

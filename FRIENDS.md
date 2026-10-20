@@ -38,5 +38,12 @@ It takes about ten minutes to set up. Do it the day before the sale, not on the 
 4. Go to the beeping window. Your details are filled in and the card form is open. Enter your card and
    click **Pay Order**. Do the Finals window first, then the other one. You have 20 minutes for each.
 
-If a line in the box is red, it tells you what to fix. If the box says "Needs you: …", type that
-answer yourself. If a page shows a Cloudflare waiting room, leave it alone; it moves on by itself.
+## If something goes wrong
+
+- A red line in the box tells you what to fix. "Needs you: …" means type that answer yourself.
+- Want to click it yourself? Go ahead. The helper steps aside and still fills in your details.
+- "Sold out" straight away? Leave the tab open. Tickets come back when other people fail to pay,
+  and the helper keeps watching for 45 minutes.
+- A Cloudflare "Just a moment" or waiting room page? Leave it alone. It moves on by itself.
+- If your 20 minutes run out, the helper goes back and grabs again by itself.
+- Once you've paid, the box says "Ticket bought" and will not grab another.

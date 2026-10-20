@@ -39,7 +39,7 @@ This creates `.venv` with Playwright and downloads a Chromium for it. Needs Pyth
 .venv/bin/python -I tests/bot_audit.py
 ```
 
-About three and a half minutes. Add check ids to run a subset, e.g. `tests/bot_audit.py S D2 D5`.
+About five minutes. Add check ids to run a subset, e.g. `tests/bot_audit.py S D2 D5`.
 To audit a different copy of the script: `SCRIPT=path/to/file.user.js .venv/bin/python -I tests/bot_audit.py`.
 
 ## The checks
@@ -63,6 +63,12 @@ To audit a different copy of the script: `SCRIPT=path/to/file.user.js .venv/bin/
 | D7 | a page whose event is not in `EVENTS` | no panel, no requests, no clicks |
 | D8 | two tabs on the same event | exactly one reaches checkout |
 | D9 | every request the browser made during the audit | only the local stand-in origins |
+| D10 | reload lands on a Cloudflare "Just a moment" page that refreshes itself | the script adds no reloads of its own, then grabs when it clears |
+| D11 | page is sold out, tickets return 16 s later | checks at least 9 s apart, grabs the returned ticket |
+| D12 | a real person clicks Continue while the script is still setting the quantity | Continue clicked exactly once (theirs), script stands aside, checkout reached |
+| D13 | the checkout hold expires | goes back to the tickets page and grabs again |
+| D14 | the order-complete page was seen earlier | tickets page shows "Already bought", no clicks |
+| D15 | background polls answered with 429 for 9 s | gaps grow to several seconds, then recovery and grab |
 
 ## Editing the script
 

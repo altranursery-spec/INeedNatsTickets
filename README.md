@@ -110,11 +110,26 @@ expired. **Copy fields** (checkout page only) copies the list of questions on th
 | 11:30 | Drag each tab into its own window and arrange them side by side so every tab stays visible. Do not minimise them. Click **Arm sound & test** in each. Every checklist row green. |
 | 11:30 | Optional backup: on your phone, on mobile data, open the Finals tickets page in the normal browser and leave it. It is a separate queue entry. Only buy from the phone if the PC tab has not reached checkout, and never buy the same ticket twice. |
 | 11:55 | Hands on keyboard, card and TCG+ ID ready. Both windows visible. Do not refresh anything. If a tab shows a Cloudflare "waiting room" page, leave it; it refreshes itself and the script resumes when you are let in. |
-| 11:59:57 | The script starts polling once per second. When Humanitix flips to on-sale it reloads once, adds 1 ticket, clicks Continue and beeps. If the page errors or comes back blank, it reloads again by itself, at most once a second, for up to 10 minutes. |
+| 11:59:57 | The script starts polling once per second. When Humanitix flips to on-sale it reloads once, adds 1 ticket, clicks Continue and beeps. If the page errors or comes back blank, it reloads again by itself, at most once a second, for up to 30 minutes. |
 | after the beep | Go to the beeping window. The script fills buyer details and Ticket info and moves to the Payment step by itself. If the panel says "Needs you: …", type that answer. Pass Turnstile if it appears, enter your card, pay. Humanitix holds the ticket for 20 minutes, shown top-right. Do the Finals first, then Flame Flame Fruit. |
 
-If a card says "Sold out" the panel goes red and stops. It will not join the waitlist for you.
-If the checkout timer expires, the panel says so; go back to the tickets page and press **Reset**.
+## If something goes wrong on the day
+
+- **You want to click it yourself.** Go ahead. A real click on "+" or Continue makes the script
+  stand aside; it will not double-click, and it still fills the checkout for you.
+- **"Sold out" at 12:00:03.** Leave the tab open. Held tickets return to stock when people fail to
+  pay within 20 minutes, and the script checks every 10 seconds for 45 minutes and grabs when one
+  comes back. It will not join the waitlist for you.
+- **Cloudflare "Just a moment" or waiting room.** Leave it. The script never reloads those pages;
+  they move on by themselves and it resumes.
+- **The page errors or goes blank.** It reloads by itself, every 2 seconds (5 seconds after ten
+  failures), for up to 30 minutes after the sale time. If Humanitix answers "too many requests",
+  it slows down and speeds back up when the site recovers.
+- **Your hold expires.** The script goes back to the tickets page by itself and grabs again.
+- **Humanitix's bot check fails at a step.** The panel tells you; click "try again" on the page and
+  the script carries on.
+- **You already bought.** The panel says so and will not grab another, even if you reopen the page.
+  Reset is the only way to make it try again.
 
 ## What it will not do
 

@@ -362,6 +362,115 @@ async def dynamic_checks(wanted):
         n = sum("/details" in u for u in info["urls"])
         record("D8 one tab one order", "PASS" if n == 1 else "FAIL", f"{n} of 2 tabs reached checkout")
 
+    # D10 hold page (Cloudflare "Just a moment") is never reloaded by the script
+    if want("D10"):
+        port += 2
+        now = time.time()
+        stub = Stub(port, port + 1, Plan(before="finals", after="digimon", flip_at=now + 5, hold_from=now + 4, hold_to=now + 11, sale_str=humanitix_str(now + 3)))
+        try:
+            info = await browse("D10 hold page", stub, [f"/{FINALS_SLUG}/tickets"], FINALS_SLUG, FAR, 40, until=lambda pgs: "/details" in pgs[0].url)
+        finally:
+            stub.stop()
+        script_reloads = [l for l in info["logs"] if "] reload " in l and "hold page cleared" not in l]
+        holds = [r for r in stub.site_rec.documents() if r["status"] == 503]
+        reached = "/details" in info["urls"][0]
+        # During the hold the page refreshes itself (meta refresh); the script must not add reloads of its own.
+        ok = len(holds) >= 2 and reached and len(script_reloads) <= 1
+        record("D10 hold page", "PASS" if ok else "FAIL",
+               f"{len(holds)} 'Just a moment' page(s) served, script-initiated reloads: {len(script_reloads)} (1 allowed: the on-sale reload), checkout {'reached' if reached else 'NOT reached'}")
+
+    # D11 sold-out watch cadence
+    if want("D11"):
+        port += 2
+        now = time.time()
+        stub = Stub(port, port + 1, Plan(before="soldout", after="digimon", flip_at=now + 16))
+        try:
+            info = await browse("D11 sold-out watch", stub, [f"/{DIGI_SLUG}/tickets"], DIGI_SLUG, FAR, 45, until=lambda pgs: "/details" in pgs[0].url)
+        finally:
+            stub.stop()
+        polls = [r["t"] for r in stub.site_rec.fetches()]
+        g = gaps(polls)
+        reached = "/details" in info["urls"][0]
+        ok = reached and len(polls) >= 2 and (not g or min(g) >= 9)
+        record("D11 sold-out watch", "PASS" if ok else "FAIL",
+               f"{len(polls)} checks while sold out, shortest gap {min(g):.1f} s, returned tickets {'grabbed' if reached else 'NOT grabbed'}" if g else f"{len(polls)} check(s) only")
+
+    # D12 human clicks first → script does not double-click
+    if want("D12"):
+        port += 2
+        stub = Stub(port, port + 1, Plan(before="digimon", slow_increment_ms=1500, continue_ignores_qty=True))
+        try:
+            from playwright.async_api import async_playwright
+            src, warns = patch_script(SCRIPT.read_text(encoding="utf-8"), DIGI_SLUG, FAR)
+            profile = OUT / "profile-D12"; os.system(f"rm -rf '{profile}'")
+            logs = []
+            async with async_playwright() as p:
+                ctx = await p.chromium.launch_persistent_context(str(profile), headless=True)
+                await ctx.add_init_script(shim(src))
+                pg = ctx.pages[0]
+                pg.on("console", lambda m: logs.append(m.text))
+                await pg.goto(stub.origin + f"/{DIGI_SLUG}/tickets", wait_until="domcontentloaded")
+                await pg.wait_for_selector('[data-testid="checkout-btn"]')
+                await asyncio.sleep(0.3)          # the script is inside its (slow) quantity step now
+                await pg.click('[data-testid="checkout-btn"]', force=True)   # a real, trusted click by the person
+                t0 = time.time()
+                while time.time() - t0 < 10 and "/details" not in pg.url:
+                    await asyncio.sleep(0.2)
+                reached = "/details" in pg.url
+                await ctx.close()
+        finally:
+            stub.stop()
+        cont = [c for c in stub.site_rec.clicks if c.get("testid") == "checkout-btn"]
+        stood = any("standing aside" in l for l in logs)
+        ok = reached and len(cont) == 1 and stood
+        record("D12 human takes over", "PASS" if ok else "FAIL",
+               f"Continue clicked {len(cont)}x in total (1 = only your click), script {'stood aside' if stood else 'did NOT notice'}, checkout {'reached' if reached else 'NOT reached'}")
+
+    # D13 expired hold → back to tickets and grab again
+    if want("D13"):
+        port += 2
+        stub = Stub(port, port + 1, Plan(before="digimon", expire_after_ms=2500))
+        try:
+            info = await browse("D13 expired hold", stub, [f"/{DIGI_SLUG}/tickets"], DIGI_SLUG, FAR, 25,
+                                until=lambda pgs: sum(1 for r in stub.site_rec.documents() if "/details" in r["path"]) >= 2 and "/details" in pgs[0].url)
+        finally:
+            stub.stop()
+        details = [r for r in stub.site_rec.documents() if "/details" in r["path"]]
+        tickets = [r for r in stub.site_rec.documents() if "/tickets" in r["path"]]
+        ok = len(details) >= 2 and len(tickets) >= 2 and any("Hold expired" in l for l in info["logs"]) or (len(details) >= 2 and len(tickets) >= 2)
+        record("D13 expired hold", "PASS" if ok else "FAIL",
+               f"checkout opened {len(details)}x, tickets page loaded {len(tickets)}x (expiry → back → grab again)")
+
+    # D14 bought already → never grabs again
+    if want("D14"):
+        port += 2
+        stub = Stub(port, port + 1, Plan(before="digimon"))
+        try:
+            info = await browse("D14 already bought", stub, [f"/{DIGI_SLUG}/au/abc/complete", f"/{DIGI_SLUG}/tickets"], DIGI_SLUG, FAR, 8)
+        finally:
+            stub.stop()
+        clicks = [c for c in stub.site_rec.clicks if not c.get("panel")]
+        ok = "Already bought" in info["panels"][1] and not clicks and "/tickets" in info["urls"][1]
+        record("D14 already bought", "PASS" if ok else "FAIL",
+               f"panel on tickets page: '{info['panels'][1].splitlines()[1] if len(info['panels'][1].splitlines()) > 1 else info['panels'][1][:60]}', {len(clicks)} click(s)")
+
+    # D15 polls answered 429 → back off, then recover
+    if want("D15"):
+        port += 2
+        now = time.time()
+        stub = Stub(port, port + 1, Plan(before="finals", after="digimon", flip_at=now + 16, fetch_429_from=now + 5, fetch_429_to=now + 14, sale_str=humanitix_str(now + 4)))
+        try:
+            info = await browse("D15 rate limited", stub, [f"/{FINALS_SLUG}/tickets"], FINALS_SLUG, FAR, 45, until=lambda pgs: "/details" in pgs[0].url)
+        finally:
+            stub.stop()
+        polls = stub.site_rec.fetches()
+        limited = [r["t"] for r in polls if r["status"] == 429]
+        g = gaps(limited)
+        reached = "/details" in info["urls"][0]
+        ok = reached and len(limited) >= 2 and g and max(g) >= 3.5
+        record("D15 rate limited", "PASS" if ok else "FAIL",
+               f"{len(limited)} polls got 429, gaps grew to {max(g):.1f} s" + (", then recovered and grabbed" if reached else ", NOT recovered") if g else f"only {len(limited)} limited poll(s)")
+
     # D9 off-origin traffic
     if want("D9"):
         bad = sorted(h for h in REQUEST_HOSTS if not h.startswith("127.0.0.1:"))

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Humanitix on-sale assistant (One Piece TCG)
 // @namespace    ineednatstickets
-// @version      1.3.0
+// @version      1.4.0
 // @description  Grabs ONE ticket the instant a configured Humanitix event goes on sale, then hands over to you for Turnstile and payment.
 // @match        https://events.humanitix.com/*
 // @homepageURL  https://github.com/altranursery-spec/INeedNatsTickets
@@ -32,7 +32,7 @@
     ticket, and only one tab per event will ever grab.
 */
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 
 // ─────────────────────────── CONFIG: edit these ───────────────────────────
 
@@ -114,7 +114,10 @@ const KEEPALIVE_SECONDS = 60;          // background request cadence before the 
 const KEEPALIVE_NEAR_SECONDS = 10;     // cadence in the last two minutes before the sale
 const POLL_START_BEFORE_MS = 3000;     // start once-per-second polling this long before the sale time
 const POLL_INTERVAL_MS = 1000;         // never below 1000
-const GIVE_UP_AFTER_MINUTES = 10;      // stop trying this long after the sale time
+const POLL_SLOW_AFTER_MINUTES = 10;    // this long after the sale time, poll every 3 s instead of 1 s
+const GIVE_UP_AFTER_MINUTES = 30;      // stop trying this long after the sale time
+const SOLDOUT_WATCH_SECONDS = 10;      // when sold out, check for returned tickets this often
+const SOLDOUT_WATCH_MINUTES = 45;      // ...for this long (held tickets come back when people don't pay within 20 min)
 const PREFILL_FOR_MINUTES = 20;        // keep prefilling checkout fields for this long (the hold length)
 const GRAB_ATTEMPTS = 3;               // Continue clicks to try before reloading
 const NAV_WAIT_MS = 6000;              // how long to wait for the checkout page after clicking Continue
@@ -135,11 +138,14 @@ const SEL = {
 };
 const NOT_ON_SALE_RE = /sales start/i;
 const SOLD_OUT_RE = /sold out/i;
-const WAITING_ROOM_RE = /waiting room|you are (now )?in (a |the )?(queue|line)|estimated wait time/i;
+// Pages to leave alone: Cloudflare waiting room and browser checks. They move on by themselves; reloading them restarts them.
+const HOLD_PAGE_RE = /waiting room|you are (now )?in (a |the )?(queue|line)|estimated wait time|just a moment|checking your browser|verify you are human|performing security verification|cf-chl|challenge-platform|cf-browser-verification/i;
 const ON_SALE_HTML_MARKER = 'data-testid="increment-';
 const ERROR_PAGE_RE = /something went wrong|please refresh|try again later|service unavailable|internal server error|bad gateway|gateway time-?out|origin is unreachable|rate limit|too many requests|error 5\d\d|error reference number: 5\d\d|<title>5\d\d/i;
 const UNAVAILABLE_RE = /sold out|no longer available|not available|unavailable|allocation exhausted|exceeded the/i;
-const SESSION_EXPIRED_RE = /session timed out|checkout time has expired|timer (has )?run out|your tickets have been released/i;
+const SESSION_EXPIRED_RE = /session timed out|checkout time has expired|timer has run out|your tickets have been released/i;
+const DONE_RE = /payment complete!|order processed!|your order is confirmed|thanks for your order|order confirmed/i;
+const BOT_CHECK_FAIL_RE = /bot protection could not verify|could not verify your browser|verification failed/i;
 
 // ─────────────────────────── Tickets page ───────────────────────────
 
@@ -164,11 +170,13 @@ async function runTicketsPage(ev) {
   const buyerOk = ["firstName", "lastName", "email", "mobile"].every((k) => BUYER[k] && BUYER[k].trim());
   ui.pf("buyer", buyerOk, buyerOk ? "Your details are saved" : "Click Settings and fill in your details");
 
-  if (isWaitingRoomPage()) {
-    ui.state("In Cloudflare queue. Do NOT reload. The queue page refreshes itself and the script resumes when you are let in.", "warn");
-    ui.pf("time", null, "Waiting in queue");
+  if (isHoldPage()) {
+    ui.state("Cloudflare queue or browser check in progress. Leave this page alone; it moves on by itself and the script resumes.", "warn");
+    ui.pf("time", null, "Waiting for Cloudflare");
     ui.pf("clock", null, "");
     ui.pf("ticket", null, "");
+    // If the check finishes in place (no navigation), restart cleanly once the ticket list is there.
+    setInterval(() => { if (findCards().length) safeReload(slug, "hold page cleared"); }, 5000);
     return;
   }
 
@@ -206,14 +214,24 @@ async function runTicketsPage(ev) {
     }
     const remaining = Number.isNaN(saleAt) ? Infinity : saleAt - now();
     const hot = Date.now() - Number(GM_getValue("hot:" + slug, 0)) < 5 * 60000;   // we reloaded because the sale opened
-    const delay = (hot || remaining <= POLL_START_BEFORE_MS) ? 2000 : 30000;
-    ui.state("Page shows " + why + ". Reloading in " + delay / 1000 + " s.", "warn");
+    const fails = Number(GM_getValue("fails:" + slug, 0)) + 1;
+    GM_setValue("fails:" + slug, fails);
+    const delay = (hot || remaining <= POLL_START_BEFORE_MS) ? (fails > 10 ? 5000 : 2000) : 30000;
+    ui.state("Page shows " + why + " (" + fails + "x). Reloading in " + delay / 1000 + " s.", "warn");
     setTimeout(() => safeReload(slug, why), delay);
     return;
   }
+  GM_deleteValue("fails:" + slug);
   let card = pickCard(ev, cards);
   const matched = !ev.match || ticketName(card).toLowerCase().includes(ev.match.toLowerCase());
   ui.pf("ticket", matched, (matched ? "Ticket: " : "No ticket matching '" + ev.match + "', using first: ") + ticketName(card));
+
+  // Ticket already bought in this browser? Never grab another by itself.
+  const doneAt = GM_getValue("done:" + slug, 0);
+  if (doneAt) {
+    ui.state("Already bought at " + new Date(doneAt).toLocaleTimeString() + ". Nothing to do. Press Reset only if you really want another ticket.", "ok");
+    return;
+  }
 
   // Checkout already reached in this browser? Don't grab again by itself.
   const grabbedAt = GM_getValue(grabbedKey, 0);
@@ -228,7 +246,7 @@ async function runTicketsPage(ev) {
     return;
   }
   if (SOLD_OUT_RE.test(card.textContent || "")) {
-    ui.state("Sold out.", "bad");
+    startSoldOutWatch(ev, ui);
     return;
   }
 
@@ -266,9 +284,10 @@ async function runTicketsPage(ev) {
     } else if (verdict === "soldout") {
       done = true; observer.disconnect();
       beep(3);
-      ui.state("Sold out.", "bad");
+      startSoldOutWatch(ev, ui);
     }
   };
+  let backoff = 0;   // consecutive 429/5xx answers to polls
 
   const tick = async () => {
     if (done) return;
@@ -283,7 +302,7 @@ async function runTicketsPage(ev) {
       if (KEEPALIVE_SECONDS > 0 && !busy && Date.now() - lastKeepalive >= cadence) {
         lastKeepalive = Date.now();
         busy = true;
-        try { handleVerdict(classifyTicketsHtml(await fetchTicketsHtml(), ev), "keepalive"); }
+        try { handleVerdict(classifyTicketsHtml((await fetchTicketsHtml()).html, ev), "keepalive"); }
         catch (e) { log("keepalive error", e); }
         finally { busy = false; }
       }
@@ -295,13 +314,18 @@ async function runTicketsPage(ev) {
       ui.state("Gave up " + GIVE_UP_AFTER_MINUTES + " min after the sale time. Reload manually to try again.", "bad");
       return;
     }
-    if (busy || Date.now() - lastPoll < Math.max(1000, POLL_INTERVAL_MS)) return;
+    // 1 s for the first minutes, 3 s later on, and doubling (to 10 s) while Humanitix answers 429/5xx.
+    const slow = t > saleAt + POLL_SLOW_AFTER_MINUTES * 60000;
+    const interval = Math.min(10000, Math.max(1000, POLL_INTERVAL_MS) * (slow ? 3 : 1) * Math.pow(2, backoff));
+    if (busy || Date.now() - lastPoll < interval) return;
     busy = true;
     lastPoll = Date.now();
-    ui.state("Sale time. Polling once per second.", "warn");
+    ui.state(backoff ? "Humanitix is struggling (" + (slow ? "slow" : "busy") + "). Polling every " + interval / 1000 + " s." : slow ? "Still watching, every 3 s." : "Sale time. Polling once per second.", "warn");
     try {
-      const verdict = classifyTicketsHtml(await fetchTicketsHtml(), ev);
-      log("poll", verdict);
+      const r = await fetchTicketsHtml();
+      backoff = (r.status === 429 || r.status >= 500) ? Math.min(backoff + 1, 3) : 0;
+      const verdict = classifyTicketsHtml(r.html, ev);
+      log("poll", verdict, r.status);
       handleVerdict(verdict, "poll");
     } catch (e) {
       log("poll error", e);
@@ -319,6 +343,35 @@ async function runTicketsPage(ev) {
     if (done) return;
     if (document.hidden && saleAt - now() < 20 * 60 * 1000) document.title = "⚠ KEEP THIS TAB VISIBLE";
   }, 5000);
+}
+
+// Sold out is not the end: held tickets return to stock when people don't pay within the 20-minute hold.
+let soldOutWatching = false;
+function startSoldOutWatch(ev, ui) {
+  if (soldOutWatching) return;
+  soldOutWatching = true;
+  const slug = ev.slug;
+  const until = Date.now() + SOLDOUT_WATCH_MINUTES * 60000;
+  ui.state("Sold out. Watching for returned tickets every " + SOLDOUT_WATCH_SECONDS + " s for " + SOLDOUT_WATCH_MINUTES + " min (held tickets come back when people don't pay). Leave this tab open.", "warn");
+  let busy = false;
+  const iv = setInterval(async () => {
+    if (Date.now() > until) { clearInterval(iv); ui.state("Sold out. Stopped watching after " + SOLDOUT_WATCH_MINUTES + " min.", "bad"); return; }
+    if (busy) return;
+    busy = true;
+    try {
+      const r = await fetchTicketsHtml();
+      const verdict = classifyTicketsHtml(r.html, ev);
+      log("soldout watch", verdict, r.status);
+      if (verdict === "onsale") {
+        clearInterval(iv);
+        beep(6);
+        GM_setValue("hot:" + slug, Date.now());
+        ui.state("TICKETS RETURNED. Reloading to grab.", "ok");
+        safeReload(slug, "returned stock");
+      }
+    } catch (e) { log("soldout watch error", e); }
+    finally { busy = false; }
+  }, SOLDOUT_WATCH_SECONDS * 1000);
 }
 
 async function grab(ev, card, ui, tab, isDup) {
@@ -345,21 +398,29 @@ async function grab(ev, card, ui, tab, isDup) {
     const input = findQty(card);
     if (!input) { await sleep(300); continue; }
 
-    await setQuantityOne(card, input);
-
-    const btn = await waitFor(enabledCheckoutButton, 4000);
-    if (btn) btn.click();
-    else {
-      const form = document.querySelector(SEL.ticketForm);
-      if (form && form.requestSubmit) form.requestSubmit();
-    }
-    log("grab", "attempt " + attempt + ": clicked Continue (" + (btn ? "button" : "form submit") + ")");
-
     // If Continue causes a full page load (not Humanitix's usual in-page move), record the grab on the way out.
     const onHide = () => { GM_setValue(grabbedKey, Date.now()); GM_deleteValue(lockKey); };
     window.addEventListener("pagehide", onHide, { once: true });
 
-    const navigated = await waitFor(() => !/\/tickets\/?$/.test(location.pathname), NAV_WAIT_MS);
+    let navigated = null;
+    if (humanTookOver) {
+      // You clicked the page yourself. The script steps aside and just waits for checkout to open.
+      ui.state("You're clicking it yourself. Standing aside; waiting for the checkout page.", "ok");
+      navigated = await waitFor(() => !/\/tickets\/?$/.test(location.pathname), 120000);
+    } else {
+      await setQuantityOne(card, input);
+      if (!humanTookOver) {
+        const btn = await waitFor(enabledCheckoutButton, 4000);
+        if (humanTookOver) { /* they beat us to it; don't double-click */ }
+        else if (btn) btn.click();
+        else {
+          const form = document.querySelector(SEL.ticketForm);
+          if (form && form.requestSubmit) form.requestSubmit();
+        }
+        log("grab", "attempt " + attempt + ": " + (humanTookOver ? "you clicked Continue; not clicking again" : "clicked Continue (" + (btn ? "button" : "form submit") + ")"));
+      }
+      navigated = await waitFor(() => !/\/tickets\/?$/.test(location.pathname), humanTookOver ? 120000 : NAV_WAIT_MS);
+    }
     window.removeEventListener("pagehide", onHide);
     if (navigated) {
       GM_setValue(grabbedKey, Date.now());
@@ -374,6 +435,11 @@ async function grab(ev, card, ui, tab, isDup) {
       return;
     }
 
+    if (humanTookOver) {
+      GM_deleteValue(lockKey);
+      ui.state("Waiting for you to finish on this page. The script won't click anything here.", "warn");
+      return;
+    }
     const err = visibleErrorText();
     if (err && UNAVAILABLE_RE.test(err)) {
       GM_deleteValue(lockKey);
@@ -401,11 +467,12 @@ async function setQuantityOne(card, input) {
     return v ? v.textContent.trim() : "";
   };
   const isOne = () => Number(input.value) === 1 || pickerValue() === "1";
-  for (let i = 0; i < 15 && !isOne(); i++) {
+  for (let i = 0; i < 15 && !isOne() && !humanTookOver; i++) {
     if (Number(input.value) > 1) { setNativeValue(input, "1"); break; }
     if (inc) inc.click(); else setNativeValue(input, "1");
     await sleep(60);
   }
+  if (humanTookOver) return;
   if (!isOne()) { setNativeValue(input, "1"); await sleep(60); }
   if (Number(input.value) > 1) setNativeValue(input, "1"); // never more than one
 }
@@ -436,20 +503,51 @@ function runCheckoutPage(ev, ui) {
   ui.hideChecklist();
   ui.addButton("Copy fields", copyFieldDump);
   ui.info("Humanitix holds the ticket until its timer (top-right) runs out.");
+  // Order already complete? Record it at once so another tab never grabs a second ticket.
+  const firstText = ((document.body && document.body.innerText) || "").slice(0, 30000);
+  if (ev && DONE_RE.test(firstText)) {
+    GM_setValue("done:" + ev.slug, Date.now());
+    ui.state("Ticket bought. Nothing more to do. (The script will not grab another for this event.)", "ok");
+    return;
+  }
+  // However this page was reached (script or you), remember it so the tickets page never grabs a second one by itself.
+  if (ev) { try { if (!GM_getValue("grabbed:" + ev.slug, 0)) GM_setValue("grabbed:" + ev.slug, Date.now()); } catch (e) {} }
 
   const until = Date.now() + PREFILL_FOR_MINUTES * 60000;
-  let total = 0, advanceClicks = 0, lastAdvance = 0, lastAdvanceText = "", busy = false, lastNeeds = "", methodPicked = false;
+  let total = 0, advanceClicks = 0, lastAdvance = 0, lastAdvanceText = "", busy = false, lastNeeds = "", methodPicked = false, botFail = false;
   const iv = setInterval(async () => {
     if (Date.now() > until) return clearInterval(iv);
     if (busy) return;
     busy = true;
     try {
       const text = ((document.body && document.body.innerText) || "").slice(0, 30000);
+      if (DONE_RE.test(text)) {
+        clearInterval(iv);
+        if (ev) GM_setValue("done:" + ev.slug, Date.now());
+        ui.state("Ticket bought. Nothing more to do. (The script will not grab another for this event.)", "ok");
+        flashTitle("✅ " + (ev ? ev.name : "Done"));
+        return;
+      }
       if (SESSION_EXPIRED_RE.test(text)) {
         clearInterval(iv);
-        ui.state("Checkout timer expired. Go back to the tickets page and press Reset.", "bad");
         beep(3);
+        if (ev) {
+          ui.state("Hold expired. Going back to the tickets page to grab again in 3 s.", "bad");
+          GM_deleteValue("grabbed:" + ev.slug);
+          GM_setValue("hot:" + ev.slug, Date.now());
+          setTimeout(() => { location.href = "/" + ev.slug + "/tickets"; }, 3000);
+        } else {
+          ui.state("Hold expired. Go back to the tickets page.", "bad");
+        }
         return;
+      }
+      if (BOT_CHECK_FAIL_RE.test(text) || BOT_CHECK_FAIL_RE.test(visibleErrorText())) {
+        if (!botFail) { botFail = true; beep(3); ui.state("Humanitix's bot check failed. Click 'try again' on the page yourself; the script waits.", "bad"); }
+        return;   // no clicking while the check is failing
+      } else if (botFail) {
+        botFail = false;
+        lastAdvance = 0; lastAdvanceText = "";
+        ui.state("Bot check cleared. Carrying on.", "ok");
       }
       const n = await fillKnownFields();
       if (n) { total += n; ui.info("Filled " + total + " field(s) so far. Check them before paying."); }
@@ -766,10 +864,10 @@ function pickCard(ev, cards) {
 function findQty(card) {
   return card ? card.querySelector(SEL.qtyInput) : null;
 }
-function isWaitingRoomPage() {
+function isHoldPage() {
   if (document.querySelector(SEL.ticketCard) || document.querySelector(SEL.ticketForm)) return false;
   const text = (document.title + " " + (document.body ? document.body.innerText : "")).slice(0, 5000);
-  return WAITING_ROOM_RE.test(text) || !!document.getElementById("cf-waiting-room");
+  return HOLD_PAGE_RE.test(text) || !!document.getElementById("cf-waiting-room") || !!document.querySelector('meta[http-equiv="refresh" i]');
 }
 function readPageSaleDateStr() {
   const el = document.querySelector(SEL.saleState);
@@ -798,13 +896,13 @@ async function fetchTicketsHtml() {
     credentials: "same-origin",
     headers: { Accept: "text/html" },
   });
-  return await r.text();
+  return { status: r.status, html: await r.text() };
 }
 
 // Decide what freshly fetched tickets HTML says for our event.
 function classifyTicketsHtml(html, ev) {
   const hasList = /TicketCard|ticket-form/.test(html);
-  if (!hasList && (WAITING_ROOM_RE.test(html) || /cf-waiting-room|__cfwaitingroom/.test(html))) return "queue";
+  if (!hasList && (HOLD_PAGE_RE.test(html) || /cf-waiting-room|__cfwaitingroom/.test(html))) return "queue";
   if (!hasList) return "error";
   let region = html;
   if (ev.match) {
@@ -977,6 +1075,13 @@ function log(...a) {
 
 // ─────────────────────────── Alerts ───────────────────────────
 
+// A real click by you on the quantity "+" or Continue means you've taken over; the script then never double-clicks.
+let humanTookOver = false;
+document.addEventListener("click", (e) => {
+  if (!e.isTrusted || !e.target || !e.target.closest) return;
+  if (e.target.closest(SEL.increment + ", " + SEL.checkoutBtn)) { humanTookOver = true; log("you clicked the page yourself; standing aside"); }
+}, true);
+
 let audioCtx = null;
 const audioListeners = [];
 function onAudioArmed(fn) { audioListeners.push(fn); }
@@ -1095,7 +1200,7 @@ function makePanel(title) {
   const box = document.createElement("div");
   box.id = "humanitix-sniper-panel";
   box.style.cssText = [
-    "position:fixed", "bottom:12px", "right:12px", "z-index:2147483647",   // bottom so it never covers Humanitix's checkout timer (top right)
+    "position:fixed", "bottom:12px", "left:12px", "z-index:2147483647",    // bottom-left: clear of Humanitix's timer (top right) and Continue button (bottom right)
     "background:#111", "color:#eee", "font:13px/1.4 system-ui,sans-serif",
     "padding:10px 12px", "border-radius:10px", "box-shadow:0 4px 18px rgba(0,0,0,.4)",
     "max-width:360px", "border:2px solid #444",
@@ -1135,7 +1240,7 @@ function makePanel(title) {
   mk("Settings", openSettings);
   mk("Arm sound & test", () => { armAudio(); beep(2); });
   mk("Reset", () => {
-    EVENTS.forEach((e) => ["grabbed:", "grabbing:", "lastReload:", "hot:", "saleAt:"].forEach((k) => GM_deleteValue(k + e.slug)));
+    EVENTS.forEach((e) => ["grabbed:", "grabbing:", "lastReload:", "hot:", "saleAt:", "done:", "fails:"].forEach((k) => GM_deleteValue(k + e.slug)));
     location.reload();
   });
   box.append(h, state, cd, info, list, row);
