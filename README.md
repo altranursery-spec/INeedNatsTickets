@@ -12,7 +12,7 @@ does for any human.
 |---|---|---|
 | Championship 2026 Melbourne Finals (Nationals) | https://events.humanitix.com/one-piece-card-game-championship-2026-melbourne-finals-oceania/tickets | Sun 25 Oct 2026, 12:00 pm AEDT |
 | Flame Flame Fruit Coliseum | https://events.humanitix.com/one-piece-card-game-championship-2026-melbourne-flame-flame-fruit-coliseum-oceania/tickets | Sun 25 Oct 2026, 12:00 pm AEDT |
-| Treasure Cup (Jan 2027 side event) | not posted yet. Run `python3 -I discover.py` daily; add the slug to `EVENTS` when it appears. | unknown |
+| Treasure Cup (Jan 2027 side event) | https://events.humanitix.com/one-piece-card-game-championship-2026-melbourne-treasure-cup-oceania/tickets | Sun 25 Oct 2026, 12:00 pm AEDT |
 
 The script reads the sale time from each event page itself, so if TAK Games moves it the
 script follows. `SALE_TIME` in the script is only the fallback.
@@ -86,8 +86,7 @@ expired. **Copy fields** (checkout page only) copies the list of questions on th
 
 1. `python3 -I selfcheck.py` must end with `RESULT: ALL GOOD`. If not, the Humanitix page changed;
    get the script updated before Sunday.
-2. `python3 -I discover.py` to see whether the Treasure Cup has been posted. If yes, add it to
-   `EVENTS` and run selfcheck again.
+2. `python3 -I discover.py` to confirm all three events still list the same sale time.
 3. Dry run on a live event that is already on sale:
    - In the script, temporarily add to `EVENTS`:
      `{ name: "TEST", slug: "digimon-card-game-championship-2026-online-november-regional-oceania", match: "" },`
@@ -106,12 +105,12 @@ expired. **Copy fields** (checkout page only) copies the list of questions on th
 
 | Time (AEDT) | Do |
 |---|---|
-| 11:00 to 11:30 | Close every other tab on events.humanitix.com. Make sure Chrome is not muted and the PC will not sleep. Open one tab per event at its `/tickets` URL. Earlier is fine and costs nothing; if a Cloudflare queue is already running, earlier arrival can only help. |
+| 11:00 to 11:30 | Close every other tab on events.humanitix.com. Make sure Chrome is not muted and the PC will not sleep. Open one tab per event at its `/tickets` URL (three events: Finals, Flame Flame Fruit, Treasure Cup). Earlier is fine and costs nothing; if a Cloudflare queue is already running, earlier arrival can only help. |
 | 11:30 | Drag each tab into its own window and arrange them side by side so every tab stays visible. Do not minimise them. Click **Arm sound & test** in each. Every checklist row green. |
 | 11:30 | Optional backup: on your phone, on mobile data, open the Finals tickets page in the normal browser and leave it. It is a separate queue entry. Only buy from the phone if the PC tab has not reached checkout, and never buy the same ticket twice. |
 | 11:55 | Hands on keyboard, card and TCG+ ID ready. Both windows visible. Do not refresh anything. If a tab shows a Cloudflare "waiting room" page, leave it; it refreshes itself and the script resumes when you are let in. |
 | 11:59:57 | The script starts polling once per second. When Humanitix flips to on-sale it reloads once, adds 1 ticket, clicks Continue and beeps. If the page errors or comes back blank, it reloads again by itself, at most once a second, for up to 30 minutes. |
-| after the beep | Go to the beeping window. The script fills buyer details and Ticket info and moves to the Payment step by itself. If the panel says "Needs you: …", type that answer. Pass Turnstile if it appears, enter your card, pay. Humanitix holds the ticket for 20 minutes, shown top-right. Do the Finals first, then Flame Flame Fruit. |
+| after the beep | Go to the beeping window. The script fills buyer details and Ticket info and moves to the Payment step by itself. If the panel says "Needs you: …", type that answer. Pass Turnstile if it appears, enter your card, pay. Humanitix holds the ticket for 20 minutes, shown top-right. Do the Finals first, then Flame Flame Fruit, then Treasure Cup. |
 
 ## If something goes wrong on the day
 

@@ -29,14 +29,15 @@ It takes about ten minutes to set up. Do it the day before the sale, not on the 
 
 ## 4. Sale day: Sunday 25 October, 12:00 pm Melbourne time
 
-1. By 11:30, open these two pages, each in its own Chrome window, side by side so both stay on screen:
+1. By 11:30, open these three pages, each in its own Chrome window, arranged so all stay on screen:
    - https://events.humanitix.com/one-piece-card-game-championship-2026-melbourne-finals-oceania/tickets
    - https://events.humanitix.com/one-piece-card-game-championship-2026-melbourne-flame-flame-fruit-coliseum-oceania/tickets
+   - https://events.humanitix.com/one-piece-card-game-championship-2026-melbourne-treasure-cup-oceania/tickets
 2. Click **Arm sound & test** in each. Check every line has a green tick. Then leave them alone.
    Do not refresh. Do not open the same page twice.
 3. At 11:55 sit down with your card. At 12:00 the helper grabs a ticket and beeps.
 4. Go to the beeping window. Your details are filled in and the card form is open. Enter your card and
-   click **Pay Order**. Do the Finals window first, then the other one. You have 20 minutes for each.
+   click **Pay Order**. Do the Finals window first, then Flame Flame Fruit, then Treasure Cup. You have 20 minutes for each.
 
 ## If something goes wrong
 

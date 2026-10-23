@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Humanitix on-sale assistant (One Piece TCG)
 // @namespace    ineednatstickets
-// @version      1.4.0
+// @version      1.4.1
 // @description  Grabs ONE ticket the instant a configured Humanitix event goes on sale, then hands over to you for Turnstile and payment.
 // @match        https://events.humanitix.com/*
 // @homepageURL  https://github.com/altranursery-spec/INeedNatsTickets
@@ -32,7 +32,7 @@
     ticket, and only one tab per event will ever grab.
 */
 
-const VERSION = "1.4.0";
+const VERSION = "1.4.1";
 
 // ─────────────────────────── CONFIG: edit these ───────────────────────────
 
@@ -48,8 +48,11 @@ const EVENTS = [
     slug: "one-piece-card-game-championship-2026-melbourne-flame-flame-fruit-coliseum-oceania",
     match: "Player Entry",
   },
-  // Add the Treasure Cup here when TAK Games posts it (run discover.py to find the slug):
-  // { name: "Treasure Cup", slug: "<slug>", match: "Entry" },
+  {
+    name: "Treasure Cup",
+    slug: "one-piece-card-game-championship-2026-melbourne-treasure-cup-oceania",
+    match: "Competitor Entry",
+  },
 ];
 
 // FALLBACK only. The script reads the real sale time from each event page ("Sales start at …").
