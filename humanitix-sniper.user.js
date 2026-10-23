@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Humanitix on-sale assistant (One Piece TCG)
 // @namespace    ineednatstickets
-// @version      1.4.2
+// @version      1.4.3
 // @description  Grabs ONE ticket the instant a configured Humanitix event goes on sale, then hands over to you for Turnstile and payment.
 // @match        https://events.humanitix.com/*
 // @homepageURL  https://github.com/altranursery-spec/INeedNatsTickets
@@ -32,7 +32,7 @@
     ticket, and only one tab per event will ever grab.
 */
 
-const VERSION = "1.4.2";
+const VERSION = "1.4.3";
 
 // ─────────────────────────── CONFIG: edit these ───────────────────────────
 
@@ -51,6 +51,13 @@ const EVENTS = [
     name: "Treasure Cup",
     slug: "one-piece-card-game-championship-2026-melbourne-treasure-cup-oceania",
     match: "Competitor Entry",
+  },
+  // DRY RUN target: an event that is already on sale, so you can watch the whole thing work once.
+  // Close the checkout without paying and press Reset afterwards. The held ticket is released after 20 minutes.
+  {
+    name: "DRY RUN (Digimon test)",
+    slug: "digimon-card-game-championship-2026-online-november-regional-oceania",
+    match: "",
   },
 ];
 

@@ -27,7 +27,8 @@ Friends get the short version in `FRIENDS.md`.
    this toggle the script never runs.
 3. Open the install link in Chrome and click **Install** when Tampermonkey asks:
    https://raw.githubusercontent.com/altranursery-spec/INeedNatsTickets/main/humanitix-sniper.user.js
-   Tampermonkey checks that link for updates by itself, so fixes reach everyone automatically.
+   Tampermonkey checks that link for updates by itself about once a day. To update right now, open
+   the same link again and click **Update**.
 4. Open the Finals tickets page. A dark panel appears bottom-right. Click **Settings**, fill in your
    details (name, email, mobile, TCG+ membership number, Discord username, address) and **Save**.
    They are stored only in your own Tampermonkey. Never put card details anywhere in this tool.
@@ -87,18 +88,14 @@ expired. **Copy fields** (checkout page only) copies the list of questions on th
 1. `python3 -I selfcheck.py` must end with `RESULT: ALL GOOD`. If not, the Humanitix page changed;
    get the script updated before Sunday.
 2. `python3 -I discover.py` to confirm all three events still list the same sale time.
-3. Dry run on a live event that is already on sale:
-   - In the script, temporarily add to `EVENTS`:
-     `{ name: "TEST", slug: "digimon-card-game-championship-2026-online-november-regional-oceania", match: "" },`
-     and save.
+3. Dry run on a live event that is already on sale. The script ships with a "DRY RUN" entry for it:
    - Open https://events.humanitix.com/digimon-card-game-championship-2026-online-november-regional-oceania/tickets
    - The event is already on sale, so the script grabs straight away: quantity 1, Continue, the
-     checkout page opens with your details prefilled, and it beeps. On sale day the picker does
-     not exist until 12:00, so it waits.
-   - The script clicks "Continue to Ticket info" itself. Check the Ticket info fields, click
-     **Copy fields**, and add any question it could not answer to `ANSWERS` (see above).
+     checkout page opens with your details prefilled, Ticket info filled, Continue to Payment,
+     card form open. On sale day the picker does not exist until 12:00, so it waits.
    - Close the tab. Do not pay. The ticket is released when the 20 minute timer runs out.
-   - Remove the TEST entry, save, and press **Reset** on any open panel.
+   - Press **Reset** on any open panel. Do this once, not repeatedly: each run holds one of that
+     event's tickets for 20 minutes.
 4. Open the Finals page and confirm every checklist row is green and the countdown is running.
 
 ## Sunday 25 October: sale day

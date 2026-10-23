@@ -27,7 +27,22 @@ It takes about ten minutes to set up. Do it the day before the sale, not on the 
    These stay on your own computer. Do not put card details anywhere.
 4. Click **Arm sound & test**. You should hear two beeps. Every line in the box should now have a green tick.
 
-## 4. Sale day: Sunday 25 October, 12:00 pm Melbourne time
+## 4. Try it once (the day before)
+
+1. Open this page. It is a different event that is already on sale, so the helper runs straight away:
+   https://events.humanitix.com/digimon-card-game-championship-2026-online-november-regional-oceania/tickets
+2. Watch it: quantity 1, Continue, your details filled in, "Continue to Ticket info", the address and
+   TCG+ and Discord questions filled, "Continue to Payment", and the card form opened.
+3. Close the tab. **Do not pay.** The held ticket is released after 20 minutes.
+4. Open the Finals page again and click **Reset** on the box. Do the test once only.
+
+## Updating
+
+The helper updates itself about once a day. To update it right now, open the install link from
+step 2 again and click **Update** (or **Reinstall**). The box on the ticket page shows the version
+on its Script line; it should say v1.4.3 or higher.
+
+## 5. Sale day: Sunday 25 October, 12:00 pm Melbourne time
 
 1. By 11:30, open these three pages, each in its own Chrome window, arranged so all stay on screen:
    - https://events.humanitix.com/one-piece-card-game-championship-2026-melbourne-finals-oceania/tickets
