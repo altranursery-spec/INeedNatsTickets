@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Humanitix on-sale assistant (One Piece TCG)
 // @namespace    ineednatstickets
-// @version      1.4.1
+// @version      1.4.2
 // @description  Grabs ONE ticket the instant a configured Humanitix event goes on sale, then hands over to you for Turnstile and payment.
 // @match        https://events.humanitix.com/*
 // @homepageURL  https://github.com/altranursery-spec/INeedNatsTickets
@@ -32,12 +32,11 @@
     ticket, and only one tab per event will ever grab.
 */
 
-const VERSION = "1.4.1";
+const VERSION = "1.4.2";
 
 // ─────────────────────────── CONFIG: edit these ───────────────────────────
 
 const EVENTS = [
-    { name: "TEST", slug: "digimon-card-game-championship-2026-online-november-regional-oceania", match: "" },
   {
     name: "Finals (Nationals)",
     slug: "one-piece-card-game-championship-2026-melbourne-finals-oceania",
